@@ -89,13 +89,13 @@ case $SDK_VERSION in
   10.5*) TARGET=darwin9 ;;
   10.6*) TARGET=darwin10 ;;
   10.7*) TARGET=darwin11 ;;
-  10.8*) TARGET=darwin12; X86_64H_SUPPORTED=1; ;;
-  10.9*) TARGET=darwin13; X86_64H_SUPPORTED=1; ;;
-  10.10*) TARGET=darwin14; X86_64H_SUPPORTED=1; ;;
-  10.11*) TARGET=darwin15; X86_64H_SUPPORTED=1; ;;
-  10.12*) TARGET=darwin16; X86_64H_SUPPORTED=1; ;;
-  10.13*) TARGET=darwin17; X86_64H_SUPPORTED=1; ;;
-  10.14*) TARGET=darwin18; X86_64H_SUPPORTED=1; ;;
+  10.8*) TARGET=darwin12; X86_64H_SUPPORTED=1 ;;
+  10.9*) TARGET=darwin13; X86_64H_SUPPORTED=1 ;;
+  10.10*) TARGET=darwin14; X86_64H_SUPPORTED=1 ;;
+  10.11*) TARGET=darwin15; X86_64H_SUPPORTED=1 ;;
+  10.12*) TARGET=darwin16; X86_64H_SUPPORTED=1 ;;
+  10.13*) TARGET=darwin17; X86_64H_SUPPORTED=1 ;;
+  10.14*) TARGET=darwin18; X86_64H_SUPPORTED=1 ;;
 *) echo "Invalid SDK Version" && exit 1 ;;
 esac
 
@@ -138,56 +138,6 @@ function remove_locks()
 
 source $BASE_DIR/tools/trap_exit.sh
 
-# CCTOOLS
-CCTOOLS_PATCH_REV=0
-LINKER_VERSION=274.2
-CCTOOLS="cctools-895-ld64-$LINKER_VERSION"
-CCTOOLS_TARBALL=$(ls $TARBALL_DIR/$CCTOOLS*.tar.* | head -n1)
-CCTOOLS_REVHASH=$(echo $(basename "$CCTOOLS_TARBALL") | tr '_' '\n' | \
-                  tr '.' '\n' | tail -n3 | head -n1)
-
-if [ ! -f "have_cctools_${CCTOOLS_REVHASH}_$TARGET_${CCTOOLS_PATCH_REV}" ]; then
-
-rm -rf cctools*
-rm -rf xar*
-
-extract $CCTOOLS_TARBALL 1
-
-pushd cctools*/cctools &>/dev/null
-pushd .. &>/dev/null
-./tools/fix_unistd_issue.sh 1>/dev/null
-popd &>/dev/null
-patch -p0 < $PATCH_DIR/cctools-ld64-1.patch
-patch -p0 < $PATCH_DIR/cctools-ld64-2.patch
-echo ""
-CONFFLAGS="--prefix=$TARGET_DIR --target=x86_64-apple-$TARGET "
-[ -z "$USE_CLANG_AS" ] && CONFFLAGS+="--disable-clang-as "
-[ -n "$DISABLE_LTO_SUPPORT" ] && CONFFLAGS+="--disable-lto-support "
-# https://github.com/tpoechtrager/osxcross/issues/156
-CXX="$CXX -DNDEBUG" ./configure $CONFFLAGS
-$MAKE -j$JOBS
-$MAKE install -j$JOBS
-popd &>/dev/null
-
-pushd $TARGET_DIR/bin &>/dev/null
-CCTOOLS=$(find . -name "x86_64-apple-darwin*")
-CCTOOLS=($CCTOOLS)
-if [ $X86_64H_SUPPORTED -eq 1 ]; then
-  for CCTOOL in ${CCTOOLS[@]}; do
-    CCTOOL_X86_64H=$(echo "$CCTOOL" | $SED 's/x86_64/x86_64h/g')
-    create_symlink $CCTOOL $CCTOOL_X86_64H
-  done
-fi
-for CCTOOL in ${CCTOOLS[@]}; do
-  CCTOOL_I386=$(echo "$CCTOOL" | $SED 's/x86_64/i386/g')
-  create_symlink $CCTOOL $CCTOOL_I386
-done
-popd &>/dev/null
-
-
-fi
-# CCTOOLS END
-
 # MacPorts symlinks
 pushd $TARGET_DIR/bin &>/dev/null # The BSD ln command doesn't support '-r'
 create_symlink $BASE_DIR/tools/osxcross-macports osxcross-macports
@@ -196,56 +146,6 @@ create_symlink $BASE_DIR/tools/osxcross-macports omp
 popd &>/dev/null
 
 SDK=$(ls $TARBALL_DIR/MacOSX$SDK_VERSION*)
-
-# XAR
-if [[ $SDK == *.pkg ]]; then
-
-set +e
-which xar &>/dev/null
-NEED_XAR=$?
-set -e
-
-if [ $NEED_XAR -ne 0 ]; then
-
-extract $TARBALL_DIR/xar*.tar.gz 2
-
-pushd xar* &>/dev/null
-if [ $PLATFORM == "NetBSD" ]; then
-  patch -p0 -l < $PATCH_DIR/xar-netbsd.patch
-fi
-patch -p0 < $PATCH_DIR/xar-ext2.patch
-# https://github.com/tpoechtrager/osxcross/issues/109
-ac_cv_lib_crypto_OpenSSL_add_all_ciphers=yes \
-CFLAGS+=" -w" \
-  ./configure --prefix=$TARGET_DIR
-$MAKE -j$JOBS
-$MAKE install -j$JOBS
-popd &>/dev/null
-
-fi
-fi
-# XAR END
-
-if [ ! -f "have_cctools_${CCTOOLS_REVHASH}_$TARGET_${CCTOOLS_PATCH_REV}" ]; then
-
-function check_cctools()
-{
-  [ -f "$TARGET_DIR/bin/$1-apple-$TARGET-lipo" ] || exit 1
-  [ -f "$TARGET_DIR/bin/$1-apple-$TARGET-ld" ] || exit 1
-  [ -f "$TARGET_DIR/bin/$1-apple-$TARGET-nm" ] || exit 1
-  [ -f "$TARGET_DIR/bin/$1-apple-$TARGET-ar" ] || exit 1
-  [ -f "$TARGET_DIR/bin/$1-apple-$TARGET-ranlib" ] || exit 1
-  [ -f "$TARGET_DIR/bin/$1-apple-$TARGET-strip" ] || exit 1
-}
-
-check_cctools i386
-check_cctools x86_64
-
-touch "have_cctools_${CCTOOLS_REVHASH}_$TARGET_${CCTOOLS_PATCH_REV}"
-
-echo ""
-
-fi # HAVE_CCTOOLS
 
 set +e
 ls $TARBALL_DIR/MacOSX$SDK_VERSION* &>/dev/null
@@ -301,7 +201,7 @@ export X86_64H_SUPPORTED
 export OSXCROSS_VERSION
 export OSXCROSS_TARGET=$TARGET
 export OSXCROSS_OSX_VERSION_MIN=$OSX_VERSION_MIN
-export OSXCROSS_LINKER_VERSION=$LINKER_VERSION
+export OSXCROSS_LINKER_VERSION=274.2
 export OSXCROSS_BUILD_DIR=$BUILD_DIR
 
 if [ "$PLATFORM" != "Darwin" ]; then
@@ -340,11 +240,11 @@ create_symlink osxcross-cmake "$TARGET_DIR/bin/x86_64-apple-$TARGET-cmake"
 
 unset MACOSX_DEPLOYMENT_TARGET
 
-test_compiler o32-clang $BASE_DIR/oclang/test.c
-test_compiler o64-clang $BASE_DIR/oclang/test.c
+# test_compiler o32-clang $BASE_DIR/oclang/test.c
+# test_compiler o64-clang $BASE_DIR/oclang/test.c
 
-test_compiler o32-clang++ $BASE_DIR/oclang/test.cpp
-test_compiler o64-clang++ $BASE_DIR/oclang/test.cpp
+# test_compiler o32-clang++ $BASE_DIR/oclang/test.cpp
+# test_compiler o64-clang++ $BASE_DIR/oclang/test.cpp
 
 if [ $(osxcross-cmp ${SDK_VERSION/u/} ">=" 10.7) -eq 1 ]; then
   if [ ! -d "$SDK_DIR/MacOSX$SDK_VERSION.sdk/usr/include/c++/v1" ]; then
